@@ -1,6 +1,6 @@
 import { GraphQLError } from 'graphql';
 import { getCompany } from './db/companies.js';
-import { createJob, deleteJob, getJob, getJobs, getJobsByCompany, updateJob } from './db/jobs.js';
+import { countJobs, createJob, deleteJob, getJob, getJobs, getJobsByCompany, updateJob } from './db/jobs.js';
 
 export const resolvers = {
   Query: {
@@ -18,7 +18,11 @@ export const resolvers = {
       }
       return job;
     },
-    jobs: () => getJobs(),
+    jobs: async (_root, { limit, offset }) => {
+      const items = await getJobs(limit, offset);
+      const totalCount = await countJobs();
+      return { items, totalCount };
+    },
   },
 
   Mutation: {
@@ -40,8 +44,15 @@ export const resolvers = {
       return job;
     },
 
-    updateJob: (_root, { input: { id, title, description } }) => {
-      return updateJob({ id, title, description });
+    updateJob: async (_root, { input: { id, title, description } }, { user }) => {
+      if (!user) {
+        throw unauthorizedError('Missing authentication');
+      }
+      const job = await updateJob({ id, companyId: user.companyId, title, description });
+      if (!job) {
+        throw notFoundError('No Job found with id ' + id);
+      }
+      return job;
     },
   },
 
@@ -50,7 +61,9 @@ export const resolvers = {
   },
 
   Job: {
-    company: (job) => getCompany(job.companyId),
+    company: (job, _args, { companyLoader }) => {
+      return companyLoader.load(job.companyId);
+    },
     date: (job) => toIsoDate(job.createdAt),
   },
 };
